@@ -1,352 +1,261 @@
-'''
-NEURALNINE (c) 2019
-Drawing Classifier ML Alpha v0.1
-
-This is the very first prototype and the code is not clean at all
-Also there may be a couple of bugs
-A lot of exceptions are not handled
-'''
-
-'''
-IMPORTS
-'''
-import PIL
 import pickle
 import os.path
+
+import tkinter.messagebox
+from tkinter import *
+from tkinter import simpledialog, filedialog
+
+import PIL
+import PIL.Image, PIL.ImageDraw
 import cv2 as cv
 import numpy as np
-import tkinter.messagebox
 
-from tkinter import *
-from tkinter import filedialog
-from tkinter import simpledialog
-from PIL import Image, ImageDraw
 from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 
-'''
-Project Initialization
-If a project is already existing, it loads the saved file
-Otherwise it creates a new one
-Creates a directory structure with project name and the individual class names
-'''
-msg = Tk()
-msg.withdraw()
 
-proj_name = simpledialog.askstring("Project Name", "Please enter your project name down below!", parent=msg)
-if os.path.exists(proj_name):
-    with open('{}/{}_data.pickle'.format(proj_name, proj_name), 'rb') as f:
-        data = pickle.load(f)
-    class1 = data['c1']
-    class2 = data['c2']
-    class3 = data['c3']
-    class1_counter = data['c1c']
-    class2_counter = data['c2c']
-    class3_counter = data['c3c']
-    clf = data['clf']
-    proj_name = data['pname']
-else:
-    class1 = simpledialog.askstring("Project Name", "What is the first class called?", parent=msg)
-    class2 = simpledialog.askstring("Project Name", "What is the second class called?", parent=msg)
-    class3 = simpledialog.askstring("Project Name", "What is the third class called?", parent=msg)
+class DrawingClassifier:
 
-    class1_counter = 1
-    class2_counter = 1
-    class3_counter = 1
+    def __init__(self):
+        self.class1, self.class2, self.class3 = None, None, None
+        self.class1_counter, self.class2_counter, self.class3_counter = None, None, None
+        self.clf = None
+        self.proj_name = None
+        self.root = None
+        self.image1 = None
 
-    clf = LinearSVC()
+        self.status_label = None
+        self.canvas = None
+        self.draw = None
 
-    os.mkdir(proj_name)
-    os.chdir(proj_name)
-    os.mkdir(class1)
-    os.mkdir(class2)
-    os.mkdir(class3)
-    os.chdir('..')
+        self.brush_width = 15
 
-'''
-FUCTIONS FOR THE MODEL AND THE MACHINE LEARNING
-'''
+        self.classes_prompt()
+        self.init_gui()
 
-'''
-Function for training the model
-Reads in all the different examples and fits the classifier
-'''
-def train_model():
-    global clf
+    def classes_prompt(self):
+        msg = Tk()
+        msg.withdraw()
 
-    img_list = np.array([])
-    class_list = np.array([])
+        self.proj_name = simpledialog.askstring("Project Name", "Please enter your project name down below!", parent=msg)
+        if os.path.exists(self.proj_name):
+            with open(f"{self.proj_name}/{self.proj_name}_data.pickle", "rb") as f:
+                data = pickle.load(f)
+            self.class1 = data['c1']
+            self.class2 = data['c2']
+            self.class3 = data['c3']
+            self.class1_counter = data['c1c']
+            self.class2_counter = data['c2c']
+            self.class3_counter = data['c3c']
+            self.clf = data['clf']
+            self.proj_name = data['pname']
+        else:
+            self.class1 = simpledialog.askstring("Class 1", "What is the first class called?", parent=msg)
+            self.class2 = simpledialog.askstring("Class 2", "What is the second class called?", parent=msg)
+            self.class3 = simpledialog.askstring("Class 3", "What is the third class called?", parent=msg)
 
-    for x in range(1, class1_counter):
-        img = cv.imread('{}/{}/{}.png'.format(proj_name, class1, x))[:, :, 0]
+            self.class1_counter = 1
+            self.class2_counter = 1
+            self.class3_counter = 1
+
+            self.clf = LinearSVC()
+
+            os.mkdir(self.proj_name)
+            os.chdir(self.proj_name)
+            os.mkdir(self.class1)
+            os.mkdir(self.class2)
+            os.mkdir(self.class3)
+            os.chdir("..")
+
+    def init_gui(self):
+        WIDTH = 500
+        HEIGHT = 500
+        WHITE = (255, 255, 255)
+
+        self.root = Tk()
+        self.root.title(f"NeuralNine Drawing Classifier Alpha v0.2 - {self.proj_name}")
+
+        self.canvas = Canvas(self.root, width=WIDTH-10, height=HEIGHT-10, bg="white")
+        self.canvas.pack(expand=YES, fill=BOTH)
+        self.canvas.bind("<B1-Motion>", self.paint)
+
+        self.image1 = PIL.Image.new("RGB", (WIDTH, HEIGHT), WHITE)
+        self.draw = PIL.ImageDraw.Draw(self.image1)
+
+        btn_frame = tkinter.Frame(self.root)
+        btn_frame.pack(fill=X, side=BOTTOM)
+
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
+        btn_frame.columnconfigure(2, weight=1)
+
+        class1_btn = Button(btn_frame, text=self.class1, command=lambda: self.save(1))
+        class1_btn.grid(row=0, column=0, sticky=W + E)
+
+        class2_btn = Button(btn_frame, text=self.class2, command=lambda: self.save(2))
+        class2_btn.grid(row=0, column=1, sticky=W + E)
+
+        class3_btn = Button(btn_frame, text=self.class3, command=lambda: self.save(3))
+        class3_btn.grid(row=0, column=2, sticky=W + E)
+
+        bm_btn = Button(btn_frame, text="Brush-", command=self.brushminus)
+        bm_btn.grid(row=1, column=0, sticky=W + E)
+
+        clear_btn = Button(btn_frame, text="Clear", command=self.clear)
+        clear_btn.grid(row=1, column=1, sticky=W + E)
+
+        bp_btn = Button(btn_frame, text="Brush+", command=self.brushplus)
+        bp_btn.grid(row=1, column=2, sticky=W + E)
+
+        train_btn = Button(btn_frame, text="Train Model", command=self.train_model)
+        train_btn.grid(row=2, column=0, sticky=W + E)
+
+        save_btn = Button(btn_frame, text="Save Model", command=self.save_model)
+        save_btn.grid(row=2, column=1, sticky=W + E)
+
+        load_btn = Button(btn_frame, text="Load Model", command=self.load_model)
+        load_btn.grid(row=2, column=2, sticky=W + E)
+
+        change_btn = Button(btn_frame, text="Change Model", command=self.rotate_model)
+        change_btn.grid(row=3, column=0, sticky=W + E)
+
+        predict_btn = Button(btn_frame, text="Predict", command=self.predict)
+        predict_btn.grid(row=3, column=1, sticky=W + E)
+
+        save_everything_btn = Button(btn_frame, text="Save Everything", command=self.save_everything)
+        save_everything_btn.grid(row=3, column=2, sticky=W + E)
+
+        self.status_label = Label(btn_frame, text=f"Current Model: {type(self.clf).__name__}")
+        self.status_label.config(font=("Arial", 10))
+        self.status_label.grid(row=4, column=1, sticky=W + E)
+
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.root.attributes("-topmost", True)
+        self.root.mainloop()
+
+    def paint(self, event):
+        x1, y1 = (event.x - 1), (event.y - 1)
+        x2, y2 = (event.x + 1), (event.y + 1)
+        self.canvas.create_rectangle(x1, y1, x2, y2, fill="black", width=self.brush_width)
+        self.draw.rectangle([x1, y2, x2 + self.brush_width, y2 + self.brush_width], fill="black", width=self.brush_width)
+
+    def save(self, class_num):
+        self.image1.save("temp.png")
+        img = PIL.Image.open("temp.png")
+        img.thumbnail((50, 50), PIL.Image.ANTIALIAS)
+
+        if class_num == 1:
+            img.save(f"{self.proj_name}/{self.class1}/{self.class1_counter}.png", "PNG")
+            self.class1_counter += 1
+        elif class_num == 2:
+            img.save(f"{self.proj_name}/{self.class2}/{self.class2_counter}.png", "PNG")
+            self.class2_counter += 1
+        elif class_num == 3:
+            img.save(f"{self.proj_name}/{self.class3}/{self.class3_counter}.png", "PNG")
+            self.class3_counter += 1
+
+        self.clear()
+
+    def brushminus(self):
+        if self.brush_width > 1:
+            self.brush_width -= 1
+
+    def brushplus(self):
+        self.brush_width += 1
+
+    def clear(self):
+        self.canvas.delete("all")
+        self.draw.rectangle([0, 0, 1000, 1000], fill="white")
+
+    def train_model(self):
+        img_list = np.array([])
+        class_list = np.array([])
+
+        for x in range(1, self.class1_counter):
+            img = cv.imread(f"{self.proj_name}/{self.class1}/{x}.png")[:, :, 0]
+            img = img.reshape(2500)
+            img_list = np.append(img_list, [img])
+            class_list = np.append(class_list, 1)
+
+        for x in range(1, self.class2_counter):
+            img = cv.imread(f"{self.proj_name}/{self.class2}/{x}.png")[:, :, 0]
+            img = img.reshape(2500)
+            img_list = np.append(img_list, [img])
+            class_list = np.append(class_list, 2)
+
+        for x in range(1, self.class3_counter):
+            img = cv.imread(f"{self.proj_name}/{self.class3}/{x}.png")[:, :, 0]
+            img = img.reshape(2500)
+            img_list = np.append(img_list, [img])
+            class_list = np.append(class_list, 3)
+
+        img_list = img_list.reshape(self.class1_counter - 1 + self.class2_counter - 1 + self.class3_counter - 1, 2500)
+
+        self.clf.fit(img_list, class_list)
+        tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", "Model successfully trained!", parent=self.root)
+
+    def predict(self):
+        self.image1.save("temp.png")
+        img = PIL.Image.open("temp.png")
+        img.thumbnail((50, 50), PIL.Image.ANTIALIAS)
+        img.save("predictshape.png", "PNG")
+
+        img = cv.imread("predictshape.png")[:, :, 0]
         img = img.reshape(2500)
-        img_list = np.append(img_list, [img])
-        class_list = np.append(class_list, 1)
+        prediction = self.clf.predict([img])
+        if prediction[0] == 1:
+            tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", f"The drawing is probably a {self.class1}", parent=self.root)
+        elif prediction[0] == 2:
+            tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", f"The drawing is probably a {self.class2}", parent=self.root)
+        elif prediction[0] == 3:
+            tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", f"The drawing is probably a {self.class3}", parent=self.root)
 
-    for x in range(1, class2_counter):
-        img = cv.imread('{}/{}/{}.png'.format(proj_name, class2, x))[:, :, 0]
-        img = img.reshape(2500)
-        img_list = np.append(img_list, [img])
-        class_list = np.append(class_list, 2)
+    def rotate_model(self):
+        if isinstance(self.clf, LinearSVC):
+            self.clf = KNeighborsClassifier()
+        elif isinstance(self.clf, KNeighborsClassifier):
+            self.clf = LogisticRegression()
+        elif isinstance(self.clf, LogisticRegression):
+            self.clf = DecisionTreeClassifier()
+        elif isinstance(self.clf, DecisionTreeClassifier):
+            self.clf = RandomForestClassifier()
+        elif isinstance(self.clf, RandomForestClassifier):
+            self.clf = GaussianNB()
+        elif isinstance(self.clf, GaussianNB):
+            self.clf = LinearSVC()
 
-    for x in range(1, class3_counter):
-        img = cv.imread('{}/{}/{}.png'.format(proj_name, class3, x))[:, :, 0]
-        img = img.reshape(2500)
-        img_list = np.append(img_list, [img])
-        class_list = np.append(class_list, 3)
+        self.status_label.config(text=f"Current Model: {type(self.clf).__name__}")
 
-    img_list = img_list.reshape(class1_counter-1 + class2_counter-1 + class3_counter-1, 2500)
+    def save_model(self):
+        file_path = filedialog.asksaveasfilename(defaultextension="pickle")
+        with open(file_path, "wb") as f:
+            pickle.dump(self.clf, f)
+        tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", "Model successfully saved!", parent=self.root)
 
-    clf.fit(img_list, class_list)
-    print("Model successfully trained!")
-    tkinter.messagebox.showinfo("NeuralNine", "Model successfully trained!", parent=root)
+    def load_model(self):
+        file_path = filedialog.askopenfilename()
+        with open(file_path, "rb") as f:
+            self.clf = pickle.load(f)
+        tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", "Model successfully loaded!", parent=self.root)
 
-'''
-Function that predicts the class of the current drawing
-First it scales the image from the canvas down to 50x50
-Then it predicts it using the classifier
-'''
-def predict():
-    global clf
+    def save_everything(self):
+        data = {"c1": self.class1, "c2": self.class2, "c3": self.class3, "c1c": self.class1_counter,
+                "c2c": self.class2_counter, "c3c": self.class3_counter, "clf": self.clf, "pname": self.proj_name}
+        with open(f"{self.proj_name}/{self.proj_name}_data.pickle", "wb") as f:
+            pickle.dump(data, f)
+        tkinter.messagebox.showinfo("NeuralNine Drawing Classifier", "Project successfully saved!", parent=self.root)
 
-    filename = "temp.png"
-    image1.save(filename)
-    im = PIL.Image.open(filename)
-    im.thumbnail((50, 50), PIL.Image.ANTIALIAS)
-    im.save('predictshape.png', 'PNG')
-
-    img = cv.imread('predictshape.png')[:, :, 0]
-    img = img.reshape(2500)
-    prediction = clf.predict([img])
-    if prediction[0] == 1:
-        print("The drawing is probably a {}!".format(class1))
-        tkinter.messagebox.showinfo("NeuralNine", "The drawing is probably a {}!".format(class1), parent=root)
-    elif prediction[0] == 2:
-        print("The drawing is probably a {}!".format(class2))
-        tkinter.messagebox.showinfo("NeuralNine", "The drawing is probably a {}!".format(class2), parent=root)
-    elif prediction[0] == 3:
-        print("The drawing is probably a {}!".format(class3))
-        tkinter.messagebox.showinfo("NeuralNine", "The drawing is probably a {}!".format(class3), parent=root)
-
-'''
-Function that serializes the model into a file
-'''
-def save_model():
-    global clf
-    file_path = filedialog.asksaveasfilename(defaultextension="pickle")
-    with open(file_path, 'wb') as f:
-        pickle.dump(clf, f)
-    tkinter.messagebox.showinfo("NeuralNine", "Model successfully saved!", parent=root)
-
-'''
-Function that loads and deserializes a model from a file
-'''
-def load_model():
-    global clf
-    file_path = filedialog.askopenfilename()
-    with open(file_path, 'rb') as f:
-        clf = pickle.load(f)
-    tkinter.messagebox.showinfo("NeuralNine", "Model successfully loaded!", parent=root)
-
-'''
-Function that saves all the important and relevant objects into a dictionary
-Saves all the class names, the counters, the project name and the actual model or classifier
-Serializes all into a file that gets loaded if you use the same project_name
-'''
-def save_everything():
-    data = {'c1': class1, 'c2': class2, 'c3': class3, 'c1c': class1_counter, 'c2c': class2_counter, 'c3c': class3_counter,
-            'pname': proj_name, 'clf': clf}
-    with open('{}/{}_data.pickle'.format(proj_name, proj_name), 'wb') as f:
-        pickle.dump(data, f)
-    tkinter.messagebox.showinfo("NeuralNine", "Project Saved!", parent=root)
-
-'''
-Function that changes the used algorithm
-The user may choose between various different classifiers
-'''
-def change_model():
-    global clf
-    if type(clf) == type(LinearSVC()):
-        clf = KNeighborsClassifier()
-        print("Now using K-Nearest-Neighbors!")
-    elif type(clf) == type(KNeighborsClassifier()):
-        clf = LogisticRegression()
-        print("Now using Logistic Regression!")
-    elif type(clf) == type(LogisticRegression()):
-        clf = DecisionTreeClassifier()
-        print("Now using Decision Tree Classifier!")
-    elif type(clf) == type(DecisionTreeClassifier()):
-        clf = RandomForestClassifier()
-        print("Now using Random Forest Classifier!")
-    elif type(clf) == type(RandomForestClassifier()):
-        clf = GaussianNB()
-        print("Now using Gaussian Naive Bayes!")
-    elif type(clf) == type(GaussianNB()):
-        clf = LinearSVC()
-        print("Now using Linear SVC!")
-
-    status_label.config(text="Current Model: {}".format(type(clf).__name__))
-
-'''
-PAINTING PART
-'''
-
-'''
-CONSTANTS FOR TKINTER
-'''
-width = 500
-height = 500
-center = height // 2
-white = (255,255,255)
-bwidth = 15
-
-'''
-Clears the whole canvas and overwrites the image
-'''
-def clear():
-    cnv.delete("all")
-    draw.rectangle([0,0,1000,1000], fill="white")
-
-'''
-Increases brush size
-'''
-def brushplus():
-    global bwidth
-    bwidth += 1
-    print("Brush Size is ", bwidth)
-
-'''
-Decreases brush size
-'''
-def brushminus():
-    global bwidth
-    if(bwidth > 1):
-        bwidth -= 1
-    print("Brush Size is ",  bwidth)
-
-'''
-Saves the current drawing into the directory of the respective class
-Also scales it down to 50x50
-'''
-def save(class_num):
-    global class1_counter, class2_counter, class3_counter
-    filename = "temp.png"
-    image1.save(filename)
-    im = PIL.Image.open(filename)
-    im.thumbnail((50,50), PIL.Image.ANTIALIAS)
-
-    if class_num == 1:
-        im.save("{}/{}/{}.png".format(proj_name, class1, class1_counter), "PNG")
-        class1_counter += 1
-    elif class_num == 2:
-        im.save("{}/{}/{}.png".format(proj_name, class2, class2_counter), "PNG")
-        class2_counter += 1
-    elif class_num == 3:
-        im.save("{}/{}/{}.png".format(proj_name, class3, class3_counter), "PNG")
-        class3_counter += 1
-
-    clear()
-
-'''
-Function that handles the mouse movement and the drawing
-'''
-def paint(event):
-    x1, y1 = (event.x - 1), (event.y - 1)
-    x2, y2 = (event.x + 1), (event.y + 1)
-    cnv.create_rectangle(x1, y1, x2, y2, fill="black", width=bwidth)
-    draw.rectangle([x1,y1, x2+bwidth, y2+bwidth], fill="black", width=bwidth)
-
-'''
-Function that gets called when window is getting closed
-Offers possibility to save the current state of everything
-'''
-def on_closing():
-        answer = tkinter.messagebox.askyesnocancel("Quit", "Do you want to save your work?", parent=root)
-        print(answer)
+    def on_closing(self):
+        answer = tkinter.messagebox.askyesnocancel("Quit?", "Do you want to save your work?", parent=self.root)
         if answer is not None:
             if answer:
-                save_everything()
-            root.destroy()
+                self.save_everything()
+            self.root.destroy()
             exit()
 
-'''
-GUI INITIALIZATION
-'''
 
-# Defining root and setting title
-root = Tk()
-root.title("NeuralNine Drawing Classifier Alpha v0.1 - {}".format(proj_name))
-
-# Defining Canvas
-cnv = Canvas(root, width=width - 10, height=height - 10, bg="white")
-cnv.pack()
-
-# Defining the ImageDrawer for Pillow
-image1 = PIL.Image.new("RGB", (width, height), white)
-draw = ImageDraw.Draw(image1)
-
-# Binding the Mouse Movement to the paint function
-cnv.pack(expand=YES, fill=BOTH)
-cnv.bind("<B1-Motion>", paint)
-
-# Defining frame for our buttons and for the label
-btn_frame = tkinter.Frame(root)
-btn_frame.pack(fill=tkinter.X, side=tkinter.BOTTOM)
-
-btn_frame.columnconfigure(0, weight=1)
-btn_frame.columnconfigure(1, weight=1)
-btn_frame.columnconfigure(2, weight=1)
-
-'''
-All the buttons with their respective functions
-'''
-
-class1_btn = Button(btn_frame, text=class1, command=lambda: save(1))
-class1_btn.grid(row=0, column=0, sticky=tkinter.W+tkinter.E)
-
-class2_btn = Button(btn_frame, text=class2, command=lambda: save(2))
-class2_btn.grid(row=0, column=1, sticky=tkinter.W+tkinter.E)
-
-class3_btn = Button(btn_frame, text=class3, command=lambda: save(3))
-class3_btn.grid(row=0, column=2, sticky=tkinter.W+tkinter.E)
-
-bm_btn = Button(btn_frame, text="Brush-", command=brushminus)
-bm_btn.grid(row=1, column=0, sticky=tkinter.W+tkinter.E)
-
-clear_btn = Button(btn_frame, text="Clear", command=clear)
-clear_btn.grid(row=1, column=1, sticky=tkinter.W+tkinter.E)
-
-bp_btn = Button(btn_frame, text="Brush+", command=brushplus)
-bp_btn.grid(row=1, column=2, sticky=tkinter.W+tkinter.E)
-
-train_btn = Button(btn_frame, text="Train Model", command=train_model)
-train_btn.grid(row=2, column=0, sticky=tkinter.W+tkinter.E)
-
-save_btn = Button(btn_frame, text="Save Model", command=save_model)
-save_btn.grid(row=2, column=1, sticky=tkinter.W+tkinter.E)
-
-load_btn = Button(btn_frame, text="Load Model", command=load_model)
-load_btn.grid(row=2, column=2, sticky=tkinter.W+tkinter.E)
-
-change_btn = Button(btn_frame, text="Change Model", command=change_model)
-change_btn.grid(row=3, column=0, sticky=tkinter.W+tkinter.E)
-
-predict_btn = Button(btn_frame, text="Predict", command=predict)
-predict_btn.grid(row=3, column=1, sticky=tkinter.W+tkinter.E)
-
-save_everything_btn = Button(btn_frame, text="Save Everything", command=save_everything)
-save_everything_btn.grid(row=3, column=2, sticky=tkinter.W+tkinter.E)
-
-status_label = Label(btn_frame, text="Current Model: {}".format(type(clf).__name__))
-status_label.config(font=("Arial", 10))
-status_label.grid(row=4, column=1, sticky=tkinter.W+tkinter.E)
-
-# Binding on_closing() to closing event
-# And getting screen in to the front
-root.protocol("WM_DELETE_WINDOW", on_closing)
-root.attributes("-topmost", True)
-root.mainloop()
+DrawingClassifier()
